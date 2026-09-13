@@ -1,0 +1,1780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#080c10" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23080c10'/%3E%3Cpath d='M4 12c3-2.5 5 2.5 8 0s5-2.5 8 0 5 2.5 8 0M4 21c3-2.5 5 2.5 8 0s5-2.5 8 0 5 2.5 8 0' stroke='%235eead4' stroke-width='2.2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
+<title>AQUAKINETICS — Cyber-Aquatic Swim Telemetry</title>
+<style>
+  :root {
+    --bg: #080c10;
+    --cyan: #22d3ee;
+    --mint: #5eead4;
+    --amber: #fbbf24;
+    --alert: #fb923c;
+    --ink: #d8f3f7;
+    --dim: rgba(216, 243, 247, 0.52);
+    --glass: rgba(11, 18, 25, 0.52);
+    --edge: rgba(94, 234, 212, 0.18);
+    --edge-hot: rgba(34, 211, 238, 0.55);
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body { overscroll-behavior: none; touch-action: none; }
+
+  #stage { position: fixed; inset: 0; display: block; }
+  #gl { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+
+  #cv-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .45s ease;
+  }
+  body[data-mode="cv"] #cv-layer { opacity: 1; }
+
+  /* Atmospherics ------------------------------------------------------- */
+  #vignette {
+    position: absolute; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(120% 90% at 50% 42%, rgba(8,12,16,0) 35%, rgba(4,7,10,.78) 100%),
+      linear-gradient(180deg, rgba(34,211,238,.05), rgba(8,12,16,0) 26%);
+    mix-blend-mode: normal;
+  }
+  #submerge {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0;
+    transition: opacity .8s ease;
+    background:
+      radial-gradient(130% 100% at 50% 0%, rgba(34,211,238,.20), rgba(6,22,30,.55) 60%, rgba(3,10,14,.86) 100%);
+  }
+  #scanlines {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0;
+    transition: opacity .5s ease;
+    background: repeating-linear-gradient(180deg, rgba(120,255,220,.045) 0px, rgba(120,255,220,.045) 1px, transparent 1px, transparent 3px);
+  }
+  body[data-mode="cv"] #scanlines { opacity: .55; }
+
+  /* Shared panel chrome ------------------------------------------------ */
+  .panel {
+    position: absolute;
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+    backdrop-filter: blur(16px) saturate(150%);
+    border: 1px solid var(--edge);
+    border-radius: 14px;
+    box-shadow: 0 18px 44px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.05);
+  }
+
+  .label {
+    font-size: 9.5px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--dim);
+    font-weight: 600;
+  }
+
+  /* Brand -------------------------------------------------------------- */
+  #brand {
+    top: 18px; left: 18px; padding: 13px 18px 14px;
+    pointer-events: none;
+  }
+  #brand h1 {
+    margin: 0;
+    font-size: 15px;
+    letter-spacing: .3em;
+    font-weight: 700;
+    color: #eafcff;
+    text-transform: uppercase;
+  }
+  #brand h1 em {
+    font-style: normal;
+    color: var(--mint);
+    text-shadow: 0 0 18px rgba(94,234,212,.7);
+  }
+  #brand .sub { margin-top: 6px; display: flex; align-items: center; gap: 8px; }
+  #brand .sub span { font-size: 10px; letter-spacing: .2em; color: var(--dim); text-transform: uppercase; }
+  .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--mint);
+    box-shadow: 0 0 10px var(--mint);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
+
+  /* Camera presets ----------------------------------------------------- */
+  #views { top: 18px; right: 18px; padding: 11px; width: 214px; }
+  #views .label { display: block; padding: 0 5px 9px; }
+  .view-btn {
+    display: flex; align-items: center; gap: 9px;
+    width: 100%; margin-bottom: 5px; padding: 9px 11px;
+    font-family: var(--sans); font-size: 11.5px; letter-spacing: .06em;
+    color: var(--dim); text-align: left;
+    background: rgba(255,255,255,.02);
+    border: 1px solid transparent; border-radius: 9px;
+    cursor: pointer; transition: all .22s ease;
+  }
+  .view-btn:last-of-type { margin-bottom: 0; }
+  .view-btn:hover { color: var(--ink); background: rgba(34,211,238,.08); border-color: rgba(34,211,238,.22); }
+  .view-btn.active { color: #eafcff; background: rgba(34,211,238,.14); border-color: var(--edge-hot); box-shadow: 0 0 18px rgba(34,211,238,.14) inset; }
+  .view-btn .ic { width: 13px; height: 13px; flex: none; opacity: .8; }
+  .view-btn.active .ic { opacity: 1; }
+
+  #follow-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 9px; padding: 8px 11px 2px;
+    border-top: 1px solid rgba(255,255,255,.07);
+  }
+  #follow-btn {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
+    padding: 4px 10px; border-radius: 20px; cursor: pointer;
+    color: var(--mint); background: rgba(94,234,212,.12);
+    border: 1px solid rgba(94,234,212,.3); transition: all .2s ease;
+  }
+  #follow-btn[data-on="0"] { color: var(--dim); background: rgba(255,255,255,.03); border-color: rgba(255,255,255,.1); }
+
+  /* Data readouts ------------------------------------------------------ */
+  #readout { top: 132px; left: 18px; width: 258px; padding: 14px 16px 15px; overflow: hidden; }
+  .screen { transition: opacity .35s ease, transform .35s ease; }
+  .screen[hidden] { display: none; }
+
+  .metric { display: flex; align-items: baseline; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.055); }
+  .metric:last-child { border-bottom: 0; }
+  .metric .k { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+  .metric .v { font-family: var(--mono); font-size: 15px; font-variant-numeric: tabular-nums; color: #eafcff; letter-spacing: .01em; }
+  .metric .v small { font-size: 9.5px; color: var(--dim); margin-left: 3px; letter-spacing: .08em; }
+
+  .hero { padding: 4px 0 10px; }
+  .hero .k { display: block; margin-bottom: 3px; }
+  .hero .v {
+    font-family: var(--mono); font-size: 34px; font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em; line-height: 1;
+    color: var(--mint); text-shadow: 0 0 26px rgba(94,234,212,.45);
+  }
+  .hero .v.est { color: var(--cyan); text-shadow: 0 0 26px rgba(34,211,238,.4); }
+
+  #swim-state {
+    display: inline-block; margin: 2px 0 8px; padding: 4px 9px; border-radius: 20px;
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--mint); background: rgba(94,234,212,.1); border: 1px solid rgba(94,234,212,.24);
+    transition: all .3s ease;
+  }
+  #swim-state.turn { color: var(--cyan); background: rgba(34,211,238,.13); border-color: rgba(34,211,238,.32); }
+
+  #splits { margin-top: 11px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,.07); }
+  #splits .label { display: block; margin-bottom: 7px; }
+  #split-list { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; color: var(--dim); }
+  #split-list div { display: flex; justify-content: space-between; padding: 2.5px 0; }
+  #split-list div:first-child { color: var(--ink); }
+  #split-list .empty { color: rgba(216,243,247,.3); letter-spacing: .1em; font-size: 10px; }
+
+  /* CV screen */
+  #cv-screen .conf-wrap { padding: 2px 0 10px; }
+  #conf-bar { position: relative; height: 5px; border-radius: 3px; background: rgba(255,255,255,.07); overflow: hidden; margin-top: 9px; }
+  #conf-fill { position: absolute; inset: 0; width: 50%; border-radius: 3px; background: linear-gradient(90deg, #4ade80, #86efac); transition: background .3s ease; }
+  #cv-status {
+    margin-top: 11px; padding: 7px 9px; border-radius: 8px;
+    font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+    color: #86efac; background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.26);
+    transition: all .25s ease;
+  }
+  #cv-status.warn { color: var(--alert); background: rgba(251,146,60,.1); border-color: rgba(251,146,60,.3); }
+  #cv-status.lost { color: #f87171; background: rgba(248,113,113,.12); border-color: rgba(248,113,113,.34); animation: blink .7s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
+
+  .note {
+    margin-top: 11px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,.07);
+    font-size: 10.5px; line-height: 1.55; color: rgba(216,243,247,.45);
+  }
+  .note b { color: rgba(216,243,247,.75); font-weight: 600; }
+
+  /* Mode pill ---------------------------------------------------------- */
+  #pill {
+    position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
+    display: flex; padding: 5px; border-radius: 999px;
+    background: rgba(11,18,25,.55);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    backdrop-filter: blur(18px) saturate(160%);
+    border: 1px solid var(--edge);
+    box-shadow: 0 18px 48px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06);
+    max-width: calc(100vw - 32px);
+  }
+  #thumb {
+    position: absolute; top: 5px; left: 5px; bottom: 5px; width: calc(50% - 5px);
+    border-radius: 999px;
+    background: linear-gradient(120deg, rgba(34,211,238,.22), rgba(94,234,212,.16));
+    border: 1px solid var(--edge-hot);
+    box-shadow: 0 0 26px rgba(34,211,238,.24);
+    transition: transform .5s cubic-bezier(.65,.02,.2,1), background .5s ease, border-color .5s ease;
+  }
+  body[data-mode="human"] #thumb {
+    transform: translateX(100%);
+    background: linear-gradient(120deg, rgba(94,234,212,.2), rgba(34,211,238,.14));
+  }
+  .mode-btn {
+    position: relative; z-index: 1; flex: 1 1 0; width: 50%;
+    padding: 10px 20px; border: 0; background: transparent; cursor: pointer;
+    font-family: var(--sans); color: var(--dim); white-space: nowrap;
+    transition: color .3s ease;
+  }
+  .mode-btn.on { color: #eafcff; }
+  .mode-btn .t { display: block; font-size: 12px; font-weight: 600; letter-spacing: .04em; }
+  .mode-btn .s { display: block; margin-top: 2px; font-size: 9px; letter-spacing: .17em; text-transform: uppercase; opacity: .66; }
+  .mode-btn .short { display: none; }
+
+  /* Corner meta -------------------------------------------------------- */
+  #hint {
+    position: absolute; bottom: 30px; left: 20px;
+    font-size: 10px; letter-spacing: .13em; text-transform: uppercase;
+    color: rgba(216,243,247,.34); line-height: 1.9; pointer-events: none;
+    transition: opacity .8s ease;
+  }
+  #hint kbd {
+    font-family: var(--mono); font-size: 9px; color: var(--mint);
+    border: 1px solid rgba(94,234,212,.25); border-radius: 4px; padding: 1px 5px; margin-right: 5px;
+  }
+  #meta {
+    position: absolute; bottom: 30px; right: 20px; text-align: right;
+    font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+    color: rgba(216,243,247,.32); line-height: 1.9; pointer-events: none;
+  }
+  #meta b { color: rgba(94,234,212,.7); font-weight: 500; }
+
+  #fallback {
+    position: fixed; inset: 0; display: none; place-items: center;
+    background: var(--bg); padding: 32px; text-align: center; z-index: 50;
+  }
+  #fallback div { max-width: 420px; }
+  #fallback h2 { font-size: 14px; letter-spacing: .24em; text-transform: uppercase; color: var(--mint); }
+  #fallback p { font-size: 13px; line-height: 1.7; color: var(--dim); }
+
+  /* Boot fade ---------------------------------------------------------- */
+  #stage { opacity: 0; transition: opacity 1.2s ease; }
+  body.ready #stage { opacity: 1; }
+
+  @media (max-width: 860px) {
+    /* collapse the camera rig into an icon rail so the header fits a phone */
+    #views {
+      top: 12px; right: 12px; width: auto; padding: 7px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    #views > .label { display: none; }
+    .view-btn {
+      width: 36px; height: 36px; margin: 0; padding: 0; gap: 0;
+      justify-content: center; border-radius: 10px; font-size: 0;
+    }
+    .view-btn .ic { width: 16px; height: 16px; }
+    #follow-row {
+      margin: 0; padding: 0 2px 0 7px; border-top: 0;
+      border-left: 1px solid rgba(255,255,255,.09);
+    }
+    #follow-row .label { display: none; }
+    #follow-btn { padding: 6px 9px; }
+
+    #brand { top: 12px; left: 12px; padding: 9px 13px; }
+    #brand h1 { font-size: 11px; letter-spacing: .2em; }
+    #brand .sub { display: none; }
+
+    #readout { top: auto; bottom: 96px; left: 12px; width: 204px; padding: 12px 13px; }
+    .note { display: none; }
+    .metric { padding: 5px 0; }
+    .metric .v { font-size: 13px; }
+    .hero .v { font-size: 26px; }
+    #split-list div:nth-child(n+4) { display: none; }
+
+    #hint { display: none; }
+    #meta { bottom: 88px; right: 14px; }
+    #pill { bottom: 18px; padding: 4px; }
+    .mode-btn { padding: 8px 10px; }
+    .mode-btn .t { font-size: 11px; }
+    .mode-btn .full { display: none; }
+    .mode-btn .short { display: block; }
+  }
+  @media (max-height: 620px) {
+    #splits { display: none; }
+  }
+  @media (max-height: 460px) {
+    #readout { display: none; }
+  }
+</style>
+</head>
+<body data-mode="cv">
+
+<div id="stage">
+  <canvas id="gl"></canvas>
+  <canvas id="cv-layer"></canvas>
+  <div id="submerge"></div>
+  <div id="scanlines"></div>
+  <div id="vignette"></div>
+
+  <div id="brand" class="panel">
+    <h1>AQUA<em>KINETICS</em></h1>
+    <div class="sub"><i class="dot"></i><span>Lane 4 · 25 YD SCY · Live capture</span></div>
+  </div>
+
+  <div id="views" class="panel">
+    <span class="label">Camera Rig</span>
+    <button class="view-btn active" data-view="deck">
+      <svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 11h14M3 11V6l5-3 5 3v5"/></svg>
+      Deck Side (Coach Angle)
+    </button>
+    <button class="view-btn" data-view="under">
+      <svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 5c2.5-2 4.5 2 7 0s4.5-2 7 0M1 11c2.5-2 4.5 2 7 0s4.5-2 7 0"/></svg>
+      Underwater Profile
+    </button>
+    <button class="view-btn" data-view="top">
+      <svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="3.5" width="13" height="9" rx="1"/><path d="M1.5 8h13"/></svg>
+      Top-Down Lane
+    </button>
+    <div id="follow-row">
+      <span class="label">Track Athlete</span>
+      <button id="follow-btn" data-on="1">ON</button>
+    </div>
+  </div>
+
+  <div id="readout" class="panel">
+    <!-- Mode A : computer vision -->
+    <section id="cv-screen" class="screen">
+      <div class="conf-wrap">
+        <span class="label">Detection Confidence</span>
+        <div class="hero"><span class="v" id="conf-val">0.00</span></div>
+        <div id="conf-bar"><div id="conf-fill"></div></div>
+      </div>
+      <div class="metric"><span class="k">Splash Turbulence</span><span class="v" id="turb-val">0.00</span></div>
+      <div class="metric"><span class="k">Occlusion</span><span class="v" id="occl-val">0<small>%</small></span></div>
+      <div class="metric"><span class="k">Track Dropouts</span><span class="v" id="drop-val">0</span></div>
+      <div class="metric"><span class="k">Phantom Blobs</span><span class="v" id="ghost-val">0</span></div>
+      <div id="cv-status">Tracking nominal</div>
+      <p class="note">Refraction, aeration and surface glare corrupt the pixel signal. <b>Camera-only tracking degrades exactly when the athlete works hardest.</b></p>
+    </section>
+
+    <!-- Mode B : human-centered kinematics -->
+    <section id="human-screen" class="screen" hidden>
+      <div class="hero">
+        <span class="k label">50y Split</span>
+        <span class="v" id="split50">--.--</span>
+      </div>
+      <div id="swim-state">Mid-pool · lap 1</div>
+      <div class="metric"><span class="k">Stroke Rate</span><span class="v"><span id="spm">0.0</span><small>spm</small></span></div>
+      <div class="metric"><span class="k">Velocity</span><span class="v"><span id="vel">0.00</span><small>m/s</small></span></div>
+      <div class="metric"><span class="k">Distance / Stroke</span><span class="v"><span id="dps">0.00</span><small>m</small></span></div>
+      <div class="metric"><span class="k">Distance</span><span class="v"><span id="dist">0</span><small>yd</small></span></div>
+      <div class="metric"><span class="k">Stroke Count</span><span class="v" id="strokes">0</span></div>
+      <div id="splits">
+        <span class="label">Length Splits (25y)</span>
+        <div id="split-list"><div class="empty">Awaiting first wall…</div></div>
+      </div>
+      <p class="note">Sensor-derived kinematics stay clean through the splash. <b>The stroke, not the pixel, is the source of truth.</b></p>
+    </section>
+  </div>
+
+  <div id="pill">
+    <div id="thumb"></div>
+    <button class="mode-btn on" data-mode="cv">
+      <span class="t">Algorithmic Noise</span>
+      <span class="s full">Computer Vision View</span>
+      <span class="s short">CV View</span>
+    </button>
+    <button class="mode-btn" data-mode="human">
+      <span class="t">Streamlined Kinematics</span>
+      <span class="s full">Human-Centered View</span>
+      <span class="s short">Human View</span>
+    </button>
+  </div>
+
+  <div id="hint">
+    <div><kbd>drag</kbd>orbit the pool</div>
+    <div><kbd>move</kbd>disturb the water</div>
+    <div><kbd>scroll</kbd>zoom</div>
+  </div>
+
+  <div id="meta">
+    <div><b id="fps">60</b> fps</div>
+    <div id="count"><b>11,500</b> gpu particles</div>
+  </div>
+</div>
+
+<div id="fallback">
+  <div>
+    <h2>WebGL Unavailable</h2>
+    <p>This simulation needs hardware-accelerated WebGL. Enable it in your browser settings or try a different device.</p>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  if (typeof THREE === 'undefined') {
+    document.getElementById('fallback').style.display = 'grid';
+    return;
+  }
+  try {
+    var probe = document.createElement('canvas');
+    if (!(probe.getContext('webgl') || probe.getContext('experimental-webgl'))) throw 0;
+  } catch (e) {
+    document.getElementById('fallback').style.display = 'grid';
+    return;
+  }
+
+  // ==================================================================== //
+  //  CONSTANTS                                                            //
+  // ==================================================================== //
+
+  var YARD = 0.9144;
+  var POOL = {
+    length: 25 * YARD,        // 22.86 m course
+    laneWidth: 2.5,
+    lanes: 5,
+    depth: 2.4
+  };
+  var HALF = POOL.length / 2;
+
+  var WATER = { cols: 100, rows: 80, span: POOL.length + 2.2, width: POOL.laneWidth * POOL.lanes + 0.6 };
+  var RIPPLE_SLOTS = 12;
+
+  // Swimmer body model. These numbers are shared verbatim by the GLSL and
+  // the JS landmark solver so the HUD boxes always land on the particles.
+  var B = {
+    hipX: -0.14, shoulderX: 0.64, headX: 0.82,
+    shoulderZ: 0.19, hipZ: 0.085,
+    armReach: 0.70, armLift: 0.40, armWide: 0.20,
+    thighX: -0.44, footX: -0.94,
+    kneeAmp: 0.10, kickAmp: 0.30,
+    rollMax: 0.62
+  };
+
+  var STROKE_PERIOD = 1.56;   // seconds per full cycle -> ~38 spm
+  var BASE_SPEED = 1.72;      // m/s
+  var TURN_TIME = 1.15;
+
+  var g = function (n) {
+    var s = Number(n).toFixed(4);
+    return s.indexOf('.') === -1 ? s + '.0' : s;
+  };
+
+  // ==================================================================== //
+  //  SHADER CHUNKS                                                        //
+  // ==================================================================== //
+
+  var NOISE_GLSL = [
+    'vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}',
+    'vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}',
+    'vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}',
+    'vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}',
+    'float snoise(vec3 v){',
+    '  const vec2 C = vec2(1.0/6.0, 1.0/3.0);',
+    '  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);',
+    '  vec3 i  = floor(v + dot(v, C.yyy));',
+    '  vec3 x0 = v - i + dot(i, C.xxx);',
+    '  vec3 s = step(x0.yzx, x0.xyz);',
+    '  vec3 l = 1.0 - s;',
+    '  vec3 i1 = min(s.xyz, l.zxy);',
+    '  vec3 i2 = max(s.xyz, l.zxy);',
+    '  vec3 x1 = x0 - i1 + C.xxx;',
+    '  vec3 x2 = x0 - i2 + C.yyy;',
+    '  vec3 x3 = x0 - D.yyy;',
+    '  i = mod289(i);',
+    '  vec4 p = permute(permute(permute(',
+    '           i.z + vec4(0.0, i1.z, i2.z, 1.0))',
+    '         + i.y + vec4(0.0, i1.y, i2.y, 1.0))',
+    '         + i.x + vec4(0.0, i1.x, i2.x, 1.0));',
+    '  float n_ = 0.142857142857;',
+    '  vec3 ns = n_ * D.wyz - D.xzx;',
+    '  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);',
+    '  vec4 x_ = floor(j * ns.z);',
+    '  vec4 y_ = floor(j - 7.0 * x_);',
+    '  vec4 x = x_ * ns.x + ns.yyyy;',
+    '  vec4 y = y_ * ns.x + ns.yyyy;',
+    '  vec4 h = 1.0 - abs(x) - abs(y);',
+    '  vec4 b0 = vec4(x.xy, y.xy);',
+    '  vec4 b1 = vec4(x.zw, y.zw);',
+    '  vec4 s0 = floor(b0)*2.0 + 1.0;',
+    '  vec4 s1 = floor(b1)*2.0 + 1.0;',
+    '  vec4 sh = -step(h, vec4(0.0));',
+    '  vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;',
+    '  vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;',
+    '  vec3 p0 = vec3(a0.xy, h.x);',
+    '  vec3 p1 = vec3(a0.zw, h.y);',
+    '  vec3 p2 = vec3(a1.xy, h.z);',
+    '  vec3 p3 = vec3(a1.zw, h.w);',
+    '  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));',
+    '  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;',
+    '  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);',
+    '  m = m * m;',
+    '  return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));',
+    '}',
+    'float hash11(float p){ return fract(sin(p*127.1)*43758.5453123); }'
+  ].join('\n');
+
+  // ==================================================================== //
+  //  RENDERER / SCENE                                                     //
+  // ==================================================================== //
+
+  var canvas = document.getElementById('gl');
+  var renderer = new THREE.WebGLRenderer({
+    canvas: canvas,
+    antialias: false,
+    alpha: false,
+    powerPreference: 'high-performance'
+  });
+  renderer.setClearColor(0x080c10, 1);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 260);
+  camera.position.set(-4.9, 2.35, 6.6);
+
+  var controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.055;
+  controls.rotateSpeed = 0.55;
+  controls.zoomSpeed = 0.75;
+  controls.panSpeed = 0.5;
+  controls.minDistance = 3.5;
+  controls.maxDistance = 46;
+  controls.maxPolarAngle = Math.PI * 0.94;
+  controls.target.set(0, 0, 0);
+
+  // ==================================================================== //
+  //  SHARED UNIFORMS                                                      //
+  // ==================================================================== //
+
+  var ripples = [];
+  for (var r = 0; r < RIPPLE_SLOTS; r++) ripples.push(new THREE.Vector4(0, 0, -999, 0));
+
+  var U = {
+    uTime:      { value: 0 },
+    uModeMix:   { value: 0 },       // 0 = CV noise, 1 = laminar kinematics
+    uTurb:      { value: 0.2 },
+    uRipples:   { value: ripples },
+    uSwimPos:   { value: new THREE.Vector3(-HALF + 2, 0, 0) },
+    uSwimDir:   { value: 1 },
+    uSizeScale: { value: 600 }
+  };
+
+  var SU = {
+    uStrokePhase: { value: 0 },
+    uKickPhase:   { value: 0 },
+    uRoll:        { value: 0 },
+    uYaw:         { value: 0 },
+    uSpin:        { value: 0 },
+    uStream:      { value: 0 },
+    uBreath:      { value: 0 }
+  };
+
+  function merge() {
+    var out = {};
+    for (var i = 0; i < arguments.length; i++) {
+      var src = arguments[i];
+      for (var k in src) if (Object.prototype.hasOwnProperty.call(src, k)) out[k] = src[k];
+    }
+    return out;
+  }
+
+  // ==================================================================== //
+  //  SYSTEM 1 — WAVE POOL (8,000 particles)                               //
+  // ==================================================================== //
+
+  var water = (function () {
+    var cols = WATER.cols, rows = WATER.rows;
+    var count = cols * rows;                      // 8,000
+    var pos = new Float32Array(count * 3);
+    var lane = new Float32Array(count * 2);       // [dist to lane line, lane centre z]
+    var rnd = new Float32Array(count * 2);
+
+    var dx = WATER.span / (cols - 1);
+    var dz = WATER.width / (rows - 1);
+    var maxLane = (POOL.lanes - 1) / 2 * POOL.laneWidth;
+    var i = 0;
+
+    for (var ix = 0; ix < cols; ix++) {
+      for (var iz = 0; iz < rows; iz++) {
+        var x = -WATER.span / 2 + ix * dx + (Math.random() - 0.5) * dx * 0.85;
+        var z = -WATER.width / 2 + iz * dz + (Math.random() - 0.5) * dz * 0.85;
+
+        var centre = Math.max(-maxLane, Math.min(maxLane, Math.round(z / POOL.laneWidth) * POOL.laneWidth));
+        var lineZ = (Math.round(z / POOL.laneWidth - 0.5) + 0.5) * POOL.laneWidth;
+
+        pos[i * 3] = x; pos[i * 3 + 1] = 0; pos[i * 3 + 2] = z;
+        lane[i * 2] = Math.abs(z - lineZ);
+        lane[i * 2 + 1] = centre;
+        rnd[i * 2] = Math.random();
+        rnd[i * 2 + 1] = Math.random();
+        i++;
+      }
+    }
+
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('aLane', new THREE.BufferAttribute(lane, 2));
+    geo.setAttribute('aRand', new THREE.BufferAttribute(rnd, 2));
+
+    var vert = [
+      'attribute vec2 aLane;',
+      'attribute vec2 aRand;',
+      'uniform float uTime;',
+      'uniform float uModeMix;',
+      'uniform float uTurb;',
+      'uniform vec4  uRipples[' + RIPPLE_SLOTS + '];',
+      'uniform vec3  uSwimPos;',
+      'uniform float uSwimDir;',
+      'uniform float uSizeScale;',
+      'varying vec3 vColor;',
+      'varying float vAlpha;',
+      NOISE_GLSL,
+      'void main(){',
+      '  float t = uTime;',
+      '  vec3 p = position;',
+      '  float lam = uModeMix;',        // 1 = laminar
+      '  float chaos = 1.0 - lam;',
+
+      // --- compound swell -------------------------------------------------
+      '  float swell = sin(p.x*0.42 + t*0.85)*0.15 + cos(p.z*0.58 - t*0.71)*0.11;',
+      '  swell += sin(p.x*0.17 - p.z*0.23 + t*0.45)*0.09;',
+      '  float chop = sin((p.x*1.75 + p.z*1.15) - t*2.35)*0.045',
+      '             + cos((p.x*2.4 - p.z*1.9) + t*3.1)*0.028;',
+
+      // --- simplex turbulence --------------------------------------------
+      '  float n1 = snoise(vec3(p.x*0.19, p.z*0.24, t*0.27));',
+      '  float n2 = snoise(vec3(p.x*0.68 + 11.0, p.z*0.74 - 4.0, t*0.82));',
+      '  float n3 = snoise(vec3(p.x*1.8 - 7.0, p.z*1.7 + 3.0, t*1.7));',
+      '  float noise = n1*0.17 + n2*0.075 + n3*0.03;',
+
+      // --- swimmer wake (trailing V) --------------------------------------
+      '  float behind = (uSwimPos.x - p.x) * uSwimDir;',
+      '  float inWake = step(0.0, behind);',
+      '  float arm = abs(p.z - uSwimPos.z) - behind*0.30;',
+      '  float wake = inWake * exp(-arm*arm*2.6) * exp(-behind*0.15)',
+      '             * sin(behind*3.1 - t*5.4) * 0.26;',
+      '  float dNear = distance(p.xz, uSwimPos.xz);',
+      '  float boil = exp(-dNear*dNear*0.30);',
+      '  float splash = boil * (0.20 + 0.26*snoise(vec3(p.xz*2.3, t*3.4))) * (0.55 + uTurb);',
+
+      // --- pointer shockwaves ---------------------------------------------
+      '  float ripple = 0.0;',
+      '  float rippleE = 0.0;',
+      '  for (int i = 0; i < ' + RIPPLE_SLOTS + '; i++) {',
+      '    vec4 rp = uRipples[i];',
+      '    float age = t - rp.z;',
+      '    float live = step(0.0001, rp.w) * step(0.0, age) * step(age, 4.5);',
+      '    float d = distance(p.xz, rp.xy);',
+      '    float front = age * 3.6;',
+      '    float ring = exp(-(d - front)*(d - front)*1.5);',
+      '    float amp = live * rp.w * ring * exp(-age*0.85) * exp(-d*0.10);',
+      '    ripple += sin((d - front)*6.2) * amp * 0.62;',
+      '    rippleE += amp;',
+      '  }',
+
+      // --- laminar lane flow (Mode B) --------------------------------------
+      '  float laneFlow = sin(p.x*0.55 - t*1.9 + aLane.y*0.6)*0.055',
+      '                 + sin(p.z*2.2 + t*0.7)*0.022;',
+
+      '  float h = swell*mix(1.0, 0.58, lam)',
+      '          + chop*mix(1.0, 0.16, lam)',
+      '          + noise*mix(1.0, 0.10, lam)',
+      '          + wake*mix(1.0, 0.34, lam)',
+      '          + splash*mix(1.0, 0.12, lam)',
+      '          + ripple',
+      '          + laneFlow*lam;',
+
+      // --- lateral behaviour ------------------------------------------------
+      '  float jx = snoise(vec3(p.xz*0.55, t*0.42 + 31.0));',
+      '  float jz = snoise(vec3(p.zx*0.55, t*0.40 - 17.0));',
+      '  float scatter = chaos * (0.16 + 0.5*boil + 0.7*abs(ripple));',
+      '  p.x += jx * scatter + lam * 0.30 * sin(p.x*0.8 - t*2.0 + aRand.y*6.2831);',
+      '  p.z += jz * scatter * 0.8 + lam * (aLane.y - p.z) * 0.22;',
+      '  p.y = h;',
+
+      // --- lane markers (rope floats strung down the lane line) -------------
+      '  float onLine = 1.0 - smoothstep(0.05, 0.36, aLane.x);',
+      '  float rope = 0.30 + 0.70*pow(abs(sin(p.x*4.6)), 1.5);',
+      '  float marker = onLine * rope;',
+
+      // --- shading ----------------------------------------------------------
+      // Mode A reads brightness off turbulence; Mode B swaps it for an ordered
+      // streaming term so laminar flow stays luminous instead of going flat.
+      '  float stream = 0.5 + 0.5*sin(p.x*1.15 - t*2.3 + aLane.y*1.4);',
+      '  float energy = clamp(abs(h)*2.1 + abs(ripple)*2.6 + splash*1.5, 0.0, 1.6);',
+      '  energy = mix(energy, 0.30 + 0.62*stream + abs(ripple)*2.2 + abs(wake)*1.4, lam);',
+      '  vec3 deep = vec3(0.043, 0.29, 0.40);',
+      '  vec3 cyan = vec3(0.133, 0.827, 0.933);',
+      '  vec3 mint = vec3(0.369, 0.918, 0.831);',
+      '  vec3 col = mix(deep, cyan, clamp(energy*0.95, 0.0, 1.0));',
+      '  col = mix(col, mint, clamp((h + 0.22)*0.9, 0.0, 1.0)*0.55);',
+      '  col = mix(col, vec3(0.85, 1.0, 1.0), clamp(splash*1.9 + abs(ripple)*1.3, 0.0, 0.85));',
+      '  col = mix(col, vec3(0.74, 1.0, 0.95), marker*0.9);',
+
+      // crest lighting so the wave structure reads even from straight above
+      '  col *= 0.62 + 0.85*clamp(h*2.2 + 0.5, 0.0, 1.0);',
+
+      // flow lines make the laminar mode legible as directional streaming
+      '  col *= mix(1.0, 0.72 + 0.75*stream, lam*0.85);',
+      '  col = mix(col, vec3(1.0, 0.62, 0.26), chaos*clamp(splash*1.5, 0.0, 0.5)*0.45);',
+
+      '  vColor = col;',
+      '  float a = 0.26 + energy*0.36 + marker*0.75;',
+      '  a *= mix(0.85 + 0.3*aRand.x, 1.0, 0.4);',
+      // soften the rectangular boundary of the particle field
+      '  a *= 1.0 - smoothstep(' + g(WATER.width * 0.5 - 2.2) + ', ' + g(WATER.width * 0.5) + ', abs(position.z));',
+      '  a *= 1.0 - smoothstep(' + g(WATER.span * 0.5 - 1.8) + ', ' + g(WATER.span * 0.5) + ', abs(position.x));',
+      '  vec4 mv = modelViewMatrix * vec4(p, 1.0);',
+      '  vAlpha = clamp(a, 0.0, 1.0) * (1.0 - smoothstep(34.0, 88.0, -mv.z));',
+      '  float size = 0.098 + energy*0.058 + marker*0.11;',
+      '  gl_PointSize = clamp(uSizeScale * size / max(-mv.z, 0.15), 1.0, 14.0);',
+      '  gl_Position = projectionMatrix * mv;',
+      '}'
+    ].join('\n');
+
+    var frag = [
+      'precision mediump float;',
+      'varying vec3 vColor;',
+      'varying float vAlpha;',
+      'void main(){',
+      '  float d = length(gl_PointCoord - vec2(0.5));',
+      '  if (d > 0.5) discard;',
+      '  float core = 1.0 - smoothstep(0.04, 0.5, d);',
+      '  float a = vAlpha * core;',
+      '  if (a < 0.01) discard;',
+      '  gl_FragColor = vec4(vColor * (0.55 + 0.75*core), a);',
+      '}'
+    ].join('\n');
+
+    var mat = new THREE.ShaderMaterial({
+      uniforms: U,
+      vertexShader: vert,
+      fragmentShader: frag,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+
+    var points = new THREE.Points(geo, mat);
+    points.frustumCulled = false;
+    scene.add(points);
+    return { points: points, count: count };
+  })();
+
+  // ==================================================================== //
+  //  SYSTEM 2 — PARAMETRIC SWIMMER (3,500 particles)                      //
+  // ==================================================================== //
+
+  var swimmer = (function () {
+    var PARTS = [
+      { id: 0, n: 1180 },   // torso
+      { id: 1, n: 260 },    // head
+      { id: 2, n: 470 },    // arm  (side -1)
+      { id: 2, n: 470 },    // arm  (side +1)
+      { id: 3, n: 510 },    // leg  (side -1)
+      { id: 3, n: 510 },    // leg  (side +1)
+      { id: 4, n: 100 }     // splash / aeration
+    ];
+    var count = 0, k;
+    for (k = 0; k < PARTS.length; k++) count += PARTS[k].n;   // 3,500
+
+    var pos = new Float32Array(count * 3);
+    var param = new Float32Array(count * 4);   // part, t, ring, side
+    var rnd = new Float32Array(count * 2);
+
+    var i = 0;
+    for (k = 0; k < PARTS.length; k++) {
+      var part = PARTS[k];
+      var side = (k === 2 || k === 4) ? -1 : 1;
+      for (var j = 0; j < part.n; j++) {
+        var t = part.id === 4 ? Math.random() : (j + Math.random()) / part.n;
+        param[i * 4] = part.id;
+        param[i * 4 + 1] = t;
+        param[i * 4 + 2] = Math.random() * Math.PI * 2;
+        param[i * 4 + 3] = side;
+        rnd[i * 2] = Math.random();
+        rnd[i * 2 + 1] = Math.random();
+        pos[i * 3] = 0; pos[i * 3 + 1] = 0; pos[i * 3 + 2] = 0;
+        i++;
+      }
+    }
+
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('aParam', new THREE.BufferAttribute(param, 4));
+    geo.setAttribute('aRand', new THREE.BufferAttribute(rnd, 2));
+
+    var vert = [
+      'attribute vec4 aParam;',
+      'attribute vec2 aRand;',
+      'uniform float uTime;',
+      'uniform float uModeMix;',
+      'uniform float uTurb;',
+      'uniform vec3  uSwimPos;',
+      'uniform float uSizeScale;',
+      'uniform float uStrokePhase;',
+      'uniform float uKickPhase;',
+      'uniform float uRoll;',
+      'uniform float uYaw;',
+      'uniform float uSpin;',
+      'uniform float uStream;',
+      'uniform float uBreath;',
+      'varying vec3 vColor;',
+      'varying float vAlpha;',
+      'const float PI = 3.14159265;',
+      NOISE_GLSL,
+
+      'mat3 rotX(float a){ float c=cos(a), s=sin(a); return mat3(1.0,0.0,0.0, 0.0,c,s, 0.0,-s,c); }',
+      'mat3 rotY(float a){ float c=cos(a), s=sin(a); return mat3(c,0.0,-s, 0.0,1.0,0.0, s,0.0,c); }',
+
+      // point on a tapered tube between a and b
+      'vec3 tube(vec3 a, vec3 b, float t, float ring, float rad){',
+      '  vec3 ax = b - a;',
+      '  float len = max(length(ax), 1e-4);',
+      '  ax /= len;',
+      '  vec3 ref = abs(ax.y) > 0.88 ? vec3(1.0,0.0,0.0) : vec3(0.0,1.0,0.0);',
+      '  vec3 n1 = normalize(cross(ax, ref));',
+      '  vec3 n2 = cross(ax, n1);',
+      '  return a + ax*(len*t) + (n1*cos(ring) + n2*sin(ring))*rad;',
+      '}',
+
+      'void main(){',
+      '  float part = aParam.x;',
+      '  float t = aParam.y;',
+      '  float ring = aParam.z;',
+      '  float side = aParam.w;',
+      '  float lam = uModeMix;',
+      '  float chaos = 1.0 - lam;',
+      '  vec3 p = vec3(0.0);',
+      '  float rollW = 1.0;',
+      '  float edge = 0.0;',
+      '  float wet = 1.0;',
+
+      // ---- shoulders / hands (shared by arms + splash) -------------------
+      '  float ph = uStrokePhase + (side > 0.0 ? 0.0 : PI);',
+      '  vec3 shoulder = vec3(' + g(B.shoulderX) + ', 0.0, side*' + g(B.shoulderZ) + ');',
+      '  vec3 hand = shoulder + vec3(',
+      '      cos(ph)*' + g(B.armReach) + ',',
+      '      sin(ph)*' + g(B.armLift) + ' + 0.02,',
+      '      side*' + g(B.armWide) + '*max(sin(ph), 0.0));',
+      '  vec3 streamHand = shoulder + vec3(0.66, 0.03, -side*0.12);',
+      '  hand = mix(hand, streamHand, uStream);',
+
+      '  if (part < 0.5) {',
+      // ---------------- torso : elongated tapered ellipsoid --------------
+      '    float x = mix(' + g(B.hipX) + ' - 0.06, ' + g(B.shoulderX) + ' + 0.06, t);',
+      '    float taper = mix(0.80, 1.14, smoothstep(0.0, 0.72, t)) * (1.0 - 0.34*smoothstep(0.84, 1.0, t));',
+      '    float ry = 0.112 * taper;',
+      '    float rz = 0.168 * taper;',
+      '    p = vec3(x, ry*sin(ring), rz*cos(ring));',
+      '    p.y += sin(uStrokePhase*2.0 - t*1.3)*0.018;',
+      '    edge = abs(cos(ring));',
+      '  } else if (part < 1.5) {',
+      // ---------------- head : streamlined sphere ------------------------
+      '    float th = t * PI;',
+      '    vec3 sp = vec3(cos(th), sin(th)*sin(ring), sin(th)*cos(ring));',
+      '    p = vec3(' + g(B.headX) + ', -0.015, 0.0) + sp * vec3(0.125, 0.098, 0.102);',
+      '    p = rotY(uBreath) * (p - vec3(0.70, 0.0, 0.0)) + vec3(0.70, 0.0, 0.0);',
+      '    rollW = 0.55;',
+      '    edge = 0.45 + 0.55*abs(sp.x);',
+      '  } else if (part < 2.5) {',
+      // ---------------- arm : catch -> pull -> recovery arc --------------
+      '    vec3 mid = (shoulder + hand) * 0.5;',
+      '    float lift = smoothstep(-0.35, 0.65, sin(ph));',
+      '    vec3 elbow = mid + vec3(0.02, mix(-0.17, 0.24, lift), side*(0.06 + 0.10*lift));',
+      '    elbow = mix(elbow, mid + vec3(0.0, 0.05, 0.0), uStream);',
+      '    float seg = step(0.5, t);',
+      '    vec3 a = mix(shoulder, elbow, seg);',
+      '    vec3 b = mix(elbow, hand, seg);',
+      '    float lt = t*2.0 - seg;',
+      '    p = tube(a, b, lt, ring, mix(0.056, 0.026, t));',
+      '    edge = 0.6 + 0.4*sin(ring);',
+      '  } else if (part < 3.5) {',
+      // ---------------- legs : travelling flutter-kick wave --------------
+      '    float kp = uKickPhase + (side > 0.0 ? 0.0 : PI);',
+      '    float amp = mix(1.0, 0.45, uStream);',
+      '    vec3 hip  = vec3(' + g(B.hipX) + ', 0.0, side*' + g(B.hipZ) + ');',
+      '    vec3 knee = hip + vec3(' + g(B.thighX - B.hipX) + ', sin(kp - 0.85)*' + g(B.kneeAmp) + '*amp, side*0.004);',
+      '    vec3 foot = hip + vec3(' + g(B.footX - B.hipX) + ', sin(kp - 1.75)*' + g(B.kickAmp) + '*amp, side*0.004);',
+      '    float seg = step(0.5, t);',
+      '    vec3 a = mix(hip, knee, seg);',
+      '    vec3 b = mix(knee, foot, seg);',
+      '    float lt = t*2.0 - seg;',
+      '    p = tube(a, b, lt, ring, mix(0.078, 0.030, t));',
+      '    rollW = 0.62;',
+      '    edge = 0.6 + 0.4*cos(ring);',
+      '  } else {',
+      // ---------------- aeration : splash off hands / head / kick --------
+      '    float pick = aRand.x;',
+      '    vec3 src = hand;',
+      '    if (pick > 0.55 && pick < 0.8) src = vec3(' + g(B.headX + 0.1) + ', 0.02, 0.0);',
+      '    if (pick >= 0.8) src = vec3(' + g(B.footX) + ', 0.0, side*0.09);',
+      '    float life = fract(uTime*0.85 + aRand.y);',
+      '    vec3 dir = normalize(vec3(',
+      '        snoise(vec3(aRand*17.0, floor(uTime*0.85 + aRand.y))),',
+      '        abs(snoise(vec3(aRand*23.0 + 4.0, floor(uTime*0.85 + aRand.y)))) + 0.35,',
+      '        snoise(vec3(aRand*31.0 - 6.0, floor(uTime*0.85 + aRand.y)))) + 1e-4);',
+      '    float spread = (0.10 + 0.55*life) * (0.4 + uTurb*1.5);',
+      '    p = src + dir*spread;',
+      '    p.y -= life*life*0.30;',
+      '    rollW = 0.3;',
+      '    wet = (1.0 - life) * (0.25 + uTurb*1.4) * chaos;',
+      '    edge = 1.0;',
+      '  }',
+
+      // ---- body roll, flip spin, heading, world placement -----------------
+      '  p = rotX(uRoll*rollW + uSpin) * p;',
+      '  p = rotY(uYaw) * p;',
+      '  p += uSwimPos;',
+
+      // ---- CV-mode corruption: refraction jitter + occlusion dropout ------
+      '  float sub = smoothstep(0.04, -0.30, p.y);',       // 1 when submerged
+      '  float flick = snoise(vec3(p.xz*1.7, uTime*2.6 + aRand.y*9.0));',
+      '  float occl = sub * (0.35 + 0.65*step(0.0, flick)) * (0.45 + uTurb*0.9);',
+      '  vec3 refract = vec3(',
+      '      snoise(vec3(p.yz*3.1, uTime*1.9)),',
+      '      snoise(vec3(p.zx*3.4 + 5.0, uTime*2.2)),',
+      '      snoise(vec3(p.xy*2.8 - 3.0, uTime*1.6)));',
+      '  p += refract * chaos * sub * (0.035 + uTurb*0.085);',
+
+      '  float alpha = wet;',
+      '  alpha *= mix(1.0 - clamp(occl, 0.0, 1.0)*0.82, 1.0, lam);',
+      '  float strobe = step(0.10, hash11(floor(aRand.x*512.0) + floor(uTime*9.0)*0.613));',
+      '  alpha *= mix(strobe, 1.0, lam);',
+
+      // ---- colour ---------------------------------------------------------
+      '  vec3 body = mix(vec3(0.20, 0.80, 0.74), vec3(0.62, 0.98, 0.94), clamp(edge, 0.0, 1.0)*0.62);',
+      '  body = mix(body, vec3(0.09, 0.55, 0.74), sub*0.5);',
+      '  if (part > 3.5) body = vec3(0.80, 0.97, 1.0);',
+      '  body = mix(body, vec3(1.0, 0.50, 0.14), chaos*clamp(occl, 0.0, 1.0)*0.6);',
+      '  body = mix(body, body*1.10 + vec3(0.02, 0.07, 0.08), lam*0.8);',
+      '  vColor = body;',
+
+      '  vec4 mv = modelViewMatrix * vec4(p, 1.0);',
+      '  vAlpha = clamp(alpha, 0.0, 1.0) * 0.72 * (1.0 - smoothstep(34.0, 88.0, -mv.z));',
+      '  float size = (part > 3.5 ? 0.055 : 0.040) + lam*0.006;',
+      '  gl_PointSize = clamp(uSizeScale * size / max(-mv.z, 0.15), 1.0, 13.0);',
+      '  gl_Position = projectionMatrix * mv;',
+      '}'
+    ].join('\n');
+
+    var frag = [
+      'precision mediump float;',
+      'varying vec3 vColor;',
+      'varying float vAlpha;',
+      'void main(){',
+      '  float d = length(gl_PointCoord - vec2(0.5));',
+      '  if (d > 0.5) discard;',
+      '  float core = 1.0 - smoothstep(0.02, 0.5, d);',
+      '  float a = vAlpha * core;',
+      '  if (a < 0.01) discard;',
+      '  gl_FragColor = vec4(vColor * (0.5 + 0.62*core), a);',
+      '}'
+    ].join('\n');
+
+    var mat = new THREE.ShaderMaterial({
+      uniforms: merge(U, SU),
+      vertexShader: vert,
+      fragmentShader: frag,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+
+    var points = new THREE.Points(geo, mat);
+    points.frustumCulled = false;
+    scene.add(points);
+    return { points: points, count: count };
+  })();
+
+  // ==================================================================== //
+  //  POOL SHELL — bottom lane targets + end walls                         //
+  // ==================================================================== //
+
+  (function buildPool() {
+    var pts = [];
+    var y = -POOL.depth;
+    var halfW = POOL.laneWidth * POOL.lanes / 2;
+    var l;
+
+    for (l = 0; l < POOL.lanes; l++) {
+      var z = (l - (POOL.lanes - 1) / 2) * POOL.laneWidth;
+      pts.push(-HALF + 0.9, y, z, HALF - 0.9, y, z);                 // black line
+      pts.push(HALF - 2.1, y, z - 0.32, HALF - 2.1, y, z + 0.32);    // T cross
+      pts.push(-HALF + 2.1, y, z - 0.32, -HALF + 2.1, y, z + 0.32);
+    }
+    for (l = 0; l <= POOL.lanes; l++) {
+      var zl = (l - POOL.lanes / 2) * POOL.laneWidth;
+      pts.push(-HALF, y, zl, HALF, y, zl);
+      pts.push(-HALF, 0.02, zl, -HALF, y, zl);
+      pts.push(HALF, 0.02, zl, HALF, y, zl);
+    }
+    pts.push(-HALF, 0.02, -halfW, -HALF, 0.02, halfW);
+    pts.push(HALF, 0.02, -halfW, HALF, 0.02, halfW);
+    pts.push(-HALF, y, -halfW, -HALF, y, halfW);
+    pts.push(HALF, y, -halfW, HALF, y, halfW);
+
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    var mat = new THREE.LineBasicMaterial({
+      color: 0x1f8ea6, transparent: true, opacity: 0.42, depthWrite: false
+    });
+    var lines = new THREE.LineSegments(geo, mat);
+    scene.add(lines);
+  })();
+
+  // ==================================================================== //
+  //  SIMULATION STATE                                                     //
+  // ==================================================================== //
+
+  var SIM = {
+    clock: new THREE.Clock(),
+    time: 0,
+    phase: 0,
+    kick: 0,
+    dir: 1,
+    x: -HALF + 1.2,
+    dx: 0,
+    y: 0,
+    yaw: 0,
+    spin: 0,
+    stream: 0,
+    breath: 0,
+    roll: 0,
+    speed: BASE_SPEED,
+    distance: 0,
+    cycles: 0,
+    turning: false,
+    turnT: 0,
+    turnX: 0,
+    turnYaw: 0,
+    lengthTime: 0,
+    splits: [],
+    turb: 0.2,
+    userEnergy: 0,
+    modeTarget: 0,
+    dropouts: 0,
+    ghosts: 0,
+    confidence: 0.9
+  };
+
+  function easeInOut(k) { return k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; }
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+
+  function updateSim(dt) {
+    SIM.time += dt;
+
+    var prevPhase = SIM.phase;
+    var prevX = SIM.x;
+
+    if (SIM.turning) {
+      SIM.turnT += dt;
+      var k = clamp(SIM.turnT / TURN_TIME, 0, 1);
+      var e = easeInOut(k);
+      SIM.yaw = SIM.turnYaw + Math.PI * e;
+      SIM.spin = Math.PI * 2 * e;
+      SIM.y = -0.34 * Math.sin(Math.PI * k);
+      SIM.stream = Math.sin(Math.PI * k);
+      SIM.x = SIM.turnX + SIM.dir * 0.34 * Math.sin(Math.PI * k);
+      SIM.speed = BASE_SPEED * (0.15 + 0.5 * k * k);
+      SIM.phase += dt * (Math.PI * 2 / STROKE_PERIOD) * 0.35;
+      if (k >= 1) {
+        SIM.turning = false;
+        SIM.dir = -SIM.dir;
+        SIM.yaw = SIM.dir > 0 ? 0 : Math.PI;
+        SIM.spin = 0;
+        SIM.stream = 0;
+        SIM.y = 0;
+        SIM.splits.unshift(SIM.lengthTime);
+        if (SIM.splits.length > 6) SIM.splits.pop();
+        SIM.lengthTime = 0;
+        renderSplits();
+      }
+    } else {
+      var omega = Math.PI * 2 / STROKE_PERIOD;
+      SIM.phase += dt * omega;
+      SIM.speed = BASE_SPEED * (1 + 0.085 * Math.sin(SIM.phase * 2 - 0.6));
+      SIM.x += SIM.speed * dt * SIM.dir;
+      SIM.distance += SIM.speed * dt;
+      SIM.lengthTime += dt;
+      SIM.y = Math.sin(SIM.phase * 2) * 0.012;
+
+      if ((SIM.dir > 0 && SIM.x > HALF - 0.55) || (SIM.dir < 0 && SIM.x < -HALF + 0.55)) {
+        SIM.turning = true;
+        SIM.turnT = 0;
+        SIM.turnX = SIM.x;
+        SIM.turnYaw = SIM.yaw;
+      }
+    }
+
+    SIM.dx = SIM.x - prevX;
+    SIM.kick = SIM.phase * 3;                       // 6-beat kick
+    SIM.roll = Math.sin(SIM.phase) * B.rollMax * (1 - SIM.stream * 0.7);
+    // breathe to the side on every other cycle, during the right-arm recovery
+    var cycle = Math.floor(SIM.phase / (Math.PI * 2));
+    var inCycle = SIM.phase / (Math.PI * 2) - cycle;
+    var breathWindow = Math.max(0, Math.sin((inCycle - 0.05) * Math.PI * 2));
+    SIM.breath = (cycle % 2 === 0 ? 1 : 0) * breathWindow * 0.75 * (1 - SIM.stream);
+
+    if (Math.floor(SIM.phase / (Math.PI * 2)) > Math.floor(prevPhase / (Math.PI * 2))) SIM.cycles++;
+
+    // hand entry events seed real ripples in the water grid
+    for (var s = 0; s < 2; s++) {
+      var off = s === 0 ? 0 : Math.PI;
+      var a = prevPhase + off, b = SIM.phase + off;
+      var cross = Math.floor((a - Math.PI) / (Math.PI * 2)) !== Math.floor((b - Math.PI) / (Math.PI * 2));
+      if (cross && !SIM.turning) {
+        var h = handWorld(s === 0 ? 1 : -1);
+        addRipple(h.x, h.z, 0.55);
+      }
+    }
+
+    // turbulence: stroke entries + kick boil + whatever the pointer stirred up
+    var entry = Math.pow(Math.abs(Math.sin(SIM.phase)), 12);
+    var kickBoil = 0.04 + 0.03 * Math.abs(Math.sin(SIM.kick));
+    SIM.userEnergy = Math.max(0, SIM.userEnergy - dt * 0.55);
+    var target = 0.075 + entry * 0.44 + kickBoil
+               + clamp(SIM.userEnergy, 0, 0.42)
+               + (SIM.turning ? 0.30 * Math.sin(Math.PI * clamp(SIM.turnT / TURN_TIME, 0, 1)) : 0);
+    SIM.turb += (target - SIM.turb) * Math.min(1, dt * 6.0);
+
+    // mode easing
+    U.uModeMix.value += (SIM.modeTarget - U.uModeMix.value) * Math.min(1, dt * 2.6);
+
+    // push uniforms
+    U.uTime.value = SIM.time;
+    U.uTurb.value = SIM.turb;
+    U.uSwimPos.value.set(SIM.x, SIM.y, 0);
+    U.uSwimDir.value = SIM.dir;
+    SU.uStrokePhase.value = SIM.phase;
+    SU.uKickPhase.value = SIM.kick;
+    SU.uRoll.value = SIM.roll;
+    SU.uYaw.value = SIM.yaw;
+    SU.uSpin.value = SIM.spin;
+    SU.uStream.value = SIM.stream;
+    SU.uBreath.value = SIM.breath;
+  }
+
+  // ---- JS mirror of the GLSL body model (for HUD landmarks) ------------
+  var _v = new THREE.Vector3();
+
+  function toWorld(lx, ly, lz, rollW) {
+    var roll = SIM.roll * rollW + SIM.spin;
+    var cr = Math.cos(roll), sr = Math.sin(roll);
+    var y = ly * cr - lz * sr;
+    var z = ly * sr + lz * cr;
+    var cy = Math.cos(SIM.yaw), sy = Math.sin(SIM.yaw);
+    var x = lx * cy + z * sy;
+    var z2 = -lx * sy + z * cy;
+    return _v.set(x + SIM.x, y + SIM.y, z2);
+  }
+
+  function handLocal(side) {
+    var ph = SIM.phase + (side > 0 ? 0 : Math.PI);
+    var sx = B.shoulderX, sz = side * B.shoulderZ;
+    var hx = sx + Math.cos(ph) * B.armReach;
+    var hy = Math.sin(ph) * B.armLift + 0.02;
+    var hz = sz + side * B.armWide * Math.max(Math.sin(ph), 0);
+    if (SIM.stream > 0) {
+      var s = SIM.stream;
+      hx = hx * (1 - s) + (sx + 0.66) * s;
+      hy = hy * (1 - s) + 0.03 * s;
+      hz = hz * (1 - s) + (sz - side * 0.12) * s;
+    }
+    return [hx, hy, hz];
+  }
+
+  function handWorld(side) {
+    var h = handLocal(side);
+    return toWorld(h[0], h[1], h[2], 1).clone();
+  }
+
+  function footLocal(side) {
+    var kp = SIM.kick + (side > 0 ? 0 : Math.PI);
+    var amp = 1 - SIM.stream * 0.55;
+    return [B.footX, Math.sin(kp - 1.75) * B.kickAmp * amp, side * B.hipZ];
+  }
+
+  var LANDMARKS = [];
+  function computeLandmarks() {
+    LANDMARKS.length = 0;
+    var h1 = handLocal(1), h2 = handLocal(-1);
+    var f1 = footLocal(1), f2 = footLocal(-1);
+    LANDMARKS.push(
+      { name: 'head', p: toWorld(B.headX + 0.12, -0.015, 0, 0.55).clone() },
+      { name: 'head2', p: toWorld(B.headX - 0.12, -0.015, 0, 0.55).clone() },
+      { name: 'shoulderR', p: toWorld(B.shoulderX, 0, B.shoulderZ, 1).clone() },
+      { name: 'shoulderL', p: toWorld(B.shoulderX, 0, -B.shoulderZ, 1).clone() },
+      { name: 'hipR', p: toWorld(B.hipX, 0, B.hipZ, 1).clone() },
+      { name: 'hipL', p: toWorld(B.hipX, 0, -B.hipZ, 1).clone() },
+      { name: 'handR', p: toWorld(h1[0], h1[1], h1[2], 1).clone() },
+      { name: 'handL', p: toWorld(h2[0], h2[1], h2[2], 1).clone() },
+      { name: 'footR', p: toWorld(f1[0], f1[1], f1[2], 0.62).clone() },
+      { name: 'footL', p: toWorld(f2[0], f2[1], f2[2], 0.62).clone() }
+    );
+  }
+
+  // ==================================================================== //
+  //  RIPPLES + POINTER                                                    //
+  // ==================================================================== //
+
+  var rippleIdx = 0;
+  function addRipple(x, z, strength) {
+    var rp = ripples[rippleIdx];
+    rp.set(x, z, SIM.time, strength);
+    rippleIdx = (rippleIdx + 1) % RIPPLE_SLOTS;
+  }
+
+  var raycaster = new THREE.Raycaster();
+  var surface = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  var ndc = new THREE.Vector2();
+  var hit = new THREE.Vector3();
+  var lastHit = new THREE.Vector2(999, 999);
+  var lastRippleT = 0;
+  var pointerDown = false;
+
+  function castPointer(clientX, clientY) {
+    ndc.x = (clientX / window.innerWidth) * 2 - 1;
+    ndc.y = -(clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(ndc, camera);
+    if (!raycaster.ray.intersectPlane(surface, hit)) return;
+    if (Math.abs(hit.x) > WATER.span * 0.55 || Math.abs(hit.z) > WATER.width * 0.55) return;
+
+    var moved = Math.hypot(hit.x - lastHit.x, hit.z - lastHit.y);
+    var gap = SIM.time - lastRippleT;
+    if (gap < 0.055) return;
+    if (moved < 0.22 && !pointerDown) return;
+
+    var strength = clamp(0.30 + moved * 0.22 + (pointerDown ? 0.45 : 0), 0.25, 1.25);
+    addRipple(hit.x, hit.z, strength);
+    // pointer-made chop feeds the turbulence metric the CV model chokes on
+    var reach = Math.max(0, 1 - Math.hypot(hit.x - SIM.x, hit.z) / 7);
+    SIM.userEnergy = Math.min(0.6, SIM.userEnergy + strength * 0.16 * (0.35 + reach));
+    lastHit.set(hit.x, hit.z);
+    lastRippleT = SIM.time;
+    dismissHint();
+  }
+
+  renderer.domElement.addEventListener('pointermove', function (e) {
+    castPointer(e.clientX, e.clientY);
+  }, { passive: true });
+  renderer.domElement.addEventListener('pointerdown', function (e) {
+    pointerDown = true;
+    castPointer(e.clientX, e.clientY);
+  }, { passive: true });
+  window.addEventListener('pointerup', function () { pointerDown = false; }, { passive: true });
+  renderer.domElement.addEventListener('pointercancel', function () { pointerDown = false; }, { passive: true });
+
+  var hintEl = document.getElementById('hint');
+  var hintGone = false;
+  function dismissHint() {
+    if (hintGone) return;
+    hintGone = true;
+    setTimeout(function () { hintEl.style.opacity = '0'; }, 2600);
+  }
+
+  // ==================================================================== //
+  //  CAMERA PRESETS + FOLLOW                                              //
+  // ==================================================================== //
+
+  var VIEWS = {
+    deck:  { pos: [-4.2, 2.7, 5.7], tgt: [0.4, -0.2, 0] },
+    under: { pos: [2.0, -1.05, 3.9], tgt: [-0.2, -0.22, 0] },
+    top:   { pos: [0.4, 6.8, 0.4], tgt: [0.4, 0, 0] }
+  };
+
+  var tween = null;
+  var follow = true;
+  var followAnchor = new THREE.Vector3(SIM.x, 0, 0);
+  var activeView = 'deck';
+  var userOrbited = false;
+
+  // Tall viewports leave dead space above the horizon: back off and pitch
+  // down so the lane keeps filling the frame on a phone held upright.
+  function framed(v) {
+    var portrait = clamp((1.25 - camera.aspect) / 0.75, 0, 1);
+    var spread = 1 + 0.35 * portrait;
+    return new THREE.Vector3(
+      v.pos[0] * spread,
+      v.pos[1] > 0 ? v.pos[1] * (1 + 1.15 * portrait) + 0.5 * portrait : v.pos[1],
+      v.pos[2] * spread
+    );
+  }
+
+  function gotoView(key) {
+    var v = VIEWS[key];
+    if (!v) return;
+    activeView = key;
+    if (follow) followAnchor.x = SIM.x;
+    var anchorX = follow ? followAnchor.x : 0;
+    var p = framed(v);
+    tween = {
+      t: 0, dur: 1.15,
+      fromPos: camera.position.clone(),
+      fromTgt: controls.target.clone(),
+      toPos: new THREE.Vector3(p.x + anchorX, p.y, p.z),
+      toTgt: new THREE.Vector3(v.tgt[0] + anchorX, v.tgt[1], v.tgt[2])
+    };
+    controls.enabled = false;
+
+    var btns = document.querySelectorAll('.view-btn');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('active', btns[i].getAttribute('data-view') === key);
+    }
+    dismissHint();
+  }
+
+  function updateCamera(dt) {
+    // Translate the whole rig with the athlete: feed-forward on this frame's
+    // travel plus a soft correction, so the orbit the user set is preserved
+    // and the swimmer never drifts out of frame.
+    var delta = 0;
+    if (follow) {
+      delta = SIM.dx + (SIM.x - followAnchor.x) * Math.min(1, dt * 2.2);
+      followAnchor.x += delta;
+    }
+
+    if (tween) {
+      tween.fromPos.x += delta; tween.toPos.x += delta;
+      tween.fromTgt.x += delta; tween.toTgt.x += delta;
+      tween.t += dt;
+      var k = clamp(tween.t / tween.dur, 0, 1);
+      var e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+      camera.position.lerpVectors(tween.fromPos, tween.toPos, e);
+      controls.target.lerpVectors(tween.fromTgt, tween.toTgt, e);
+      if (k >= 1) { tween = null; controls.enabled = true; }
+    } else if (delta !== 0) {
+      camera.position.x += delta;
+      controls.target.x += delta;
+    }
+    controls.update();
+
+    var sub = clamp((0.25 - camera.position.y) / 1.2, 0, 1);
+    submergeEl.style.opacity = sub.toFixed(3);
+  }
+
+  var submergeEl = document.getElementById('submerge');
+
+  var viewBtns = document.querySelectorAll('.view-btn');
+  for (var vb = 0; vb < viewBtns.length; vb++) {
+    viewBtns[vb].addEventListener('click', function () {
+      gotoView(this.getAttribute('data-view'));
+    });
+  }
+
+  var followBtn = document.getElementById('follow-btn');
+  followBtn.addEventListener('click', function () {
+    follow = !follow;
+    followBtn.setAttribute('data-on', follow ? '1' : '0');
+    followBtn.textContent = follow ? 'ON' : 'OFF';
+    if (follow) followAnchor.x = SIM.x;   // re-sync so re-engaging never jumps
+  });
+
+  controls.addEventListener('start', function () {
+    if (tween) { tween = null; controls.enabled = true; }
+    userOrbited = true;
+    dismissHint();
+  });
+
+  // ==================================================================== //
+  //  MODE TOGGLE                                                          //
+  // ==================================================================== //
+
+  var body = document.body;
+  var cvScreen = document.getElementById('cv-screen');
+  var humanScreen = document.getElementById('human-screen');
+  var modeBtns = document.querySelectorAll('.mode-btn');
+  var mode = 'cv';
+
+  function setMode(next) {
+    if (next === mode) return;
+    mode = next;
+    SIM.modeTarget = next === 'human' ? 1 : 0;
+    body.setAttribute('data-mode', next);
+    for (var i = 0; i < modeBtns.length; i++) {
+      modeBtns[i].classList.toggle('on', modeBtns[i].getAttribute('data-mode') === next);
+    }
+    cvScreen.hidden = next !== 'cv';
+    humanScreen.hidden = next !== 'human';
+    dismissHint();
+  }
+
+  for (var mb = 0; mb < modeBtns.length; mb++) {
+    modeBtns[mb].addEventListener('click', function () {
+      setMode(this.getAttribute('data-mode'));
+    });
+  }
+
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'm' || e.key === 'M') setMode(mode === 'cv' ? 'human' : 'cv');
+    if (e.key === '1') gotoView('deck');
+    if (e.key === '2') gotoView('under');
+    if (e.key === '3') gotoView('top');
+  });
+
+  // ==================================================================== //
+  //  HUD A — COMPUTER VISION OVERLAY                                      //
+  // ==================================================================== //
+
+  var cvCanvas = document.getElementById('cv-layer');
+  var ctx = cvCanvas.getContext('2d');
+  var cvW = 0, cvH = 0;
+
+  var confEl = document.getElementById('conf-val');
+  var confFill = document.getElementById('conf-fill');
+  var turbEl = document.getElementById('turb-val');
+  var occlEl = document.getElementById('occl-val');
+  var dropEl = document.getElementById('drop-val');
+  var ghostEl = document.getElementById('ghost-val');
+  var statusEl = document.getElementById('cv-status');
+
+  var proj = new THREE.Vector3();
+  var ghostBlobs = [];
+  var lastGhostSpawn = 0;
+  var dropUntil = 0;
+  var hudAccum = 0;
+
+  function projectPoint(p) {
+    proj.copy(p).project(camera);
+    return {
+      x: (proj.x * 0.5 + 0.5) * cvW,
+      y: (-proj.y * 0.5 + 0.5) * cvH,
+      z: proj.z
+    };
+  }
+
+  function boxOf(names) {
+    var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9, ok = false;
+    for (var i = 0; i < LANDMARKS.length; i++) {
+      if (names.indexOf(LANDMARKS[i].name) === -1) continue;
+      var s = projectPoint(LANDMARKS[i].p);
+      if (s.z > 1 || s.z < -1) continue;
+      ok = true;
+      if (s.x < minX) minX = s.x;
+      if (s.y < minY) minY = s.y;
+      if (s.x > maxX) maxX = s.x;
+      if (s.y > maxY) maxY = s.y;
+    }
+    if (!ok) return null;
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+
+  function drawBracketBox(b, color, label, sub, thin) {
+    var pad = thin ? 6 : 14;
+    var x = b.x - pad, y = b.y - pad, w = b.w + pad * 2, h = b.h + pad * 2;
+    var c = Math.min(18, w * 0.28, h * 0.28);
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = thin ? 1 : 1.6;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+
+    ctx.beginPath();
+    ctx.moveTo(x, y + c); ctx.lineTo(x, y); ctx.lineTo(x + c, y);
+    ctx.moveTo(x + w - c, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + c);
+    ctx.moveTo(x + w, y + h - c); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - c, y + h);
+    ctx.moveTo(x + c, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - c);
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 0.22;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 5]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+
+    if (label) {
+      ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+      var tw = ctx.measureText(label).width + 12;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.16;
+      ctx.fillRect(x, y - 17, tw, 15);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = color;
+      ctx.fillText(label, x + 6, y - 6);
+    }
+    if (sub) {
+      ctx.font = '500 9px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.globalAlpha = 0.7;
+      ctx.fillStyle = color;
+      ctx.fillText(sub, x, y + h + 12);
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
+
+  function updateCV(dt) {
+    ctx.clearRect(0, 0, cvW, cvH);
+    if (mode !== 'cv' && U.uModeMix.value > 0.92) return;
+
+    computeLandmarks();
+
+    var turb = SIM.turb;
+    var occl = clamp(turb * 0.85 + (SIM.turning ? 0.3 : 0), 0, 1);
+    var conf = clamp(0.97 - turb * 0.78 - Math.pow(turb, 2) * 0.35, 0.04, 0.99);
+    SIM.confidence += (conf - SIM.confidence) * Math.min(1, dt * 8);
+    conf = SIM.confidence;
+
+    var tracking = true;
+    if (conf < 0.42 && SIM.time > dropUntil) {
+      if (Math.random() < dt * 5.5) { dropUntil = SIM.time + 0.12 + Math.random() * 0.30; SIM.dropouts++; }
+    }
+    if (SIM.time < dropUntil) tracking = false;
+
+    var warn = conf < 0.62;
+    var color = conf > 0.62 ? 'rgba(74,222,128,0.95)' : (conf > 0.4 ? 'rgba(251,146,60,0.95)' : 'rgba(248,113,113,0.95)');
+    var jitter = (1 - conf) * 9;
+
+    var full = boxOf(['head', 'head2', 'shoulderR', 'shoulderL', 'hipR', 'hipL', 'handR', 'handL', 'footR', 'footL']);
+    var headB = boxOf(['head', 'head2']);
+    var handB = boxOf(['handR']);
+
+    if (full && tracking) {
+      full.x += (Math.random() - 0.5) * jitter;
+      full.y += (Math.random() - 0.5) * jitter;
+      full.w += (Math.random() - 0.5) * jitter * 0.8;
+      drawBracketBox(full, color, 'ATHLETE 01 · ' + conf.toFixed(2), 'BBOX ' + Math.round(full.w) + 'x' + Math.round(full.h) + 'px', false);
+    } else if (full) {
+      ctx.save();
+      ctx.globalAlpha = 0.38;
+      drawBracketBox(full, 'rgba(248,113,113,0.9)', 'SEARCHING…', null, false);
+      ctx.restore();
+    }
+
+    if (headB && tracking && conf > 0.3) {
+      headB.x += (Math.random() - 0.5) * jitter * 0.6;
+      headB.y += (Math.random() - 0.5) * jitter * 0.6;
+      drawBracketBox(headB, color, 'HEAD ' + (conf * 0.92).toFixed(2), null, true);
+    }
+    if (handB && conf > 0.55 && Math.random() > 0.6) {
+      drawBracketBox(handB, 'rgba(94,234,212,0.8)', 'HAND', null, true);
+    }
+
+    // phantom detections spawned by splash
+    if (SIM.time - lastGhostSpawn > 0.26 && turb > 0.34 && Math.random() < turb) {
+      lastGhostSpawn = SIM.time;
+      var src = Math.random() > 0.5 ? handWorld(1) : handWorld(-1);
+      var sp = projectPoint(src);
+      var size = 30 + Math.random() * 70 * turb;
+      ghostBlobs.push({
+        x: sp.x + (Math.random() - 0.5) * 180 * turb,
+        y: sp.y + (Math.random() - 0.5) * 120 * turb,
+        w: size, h: size * (0.6 + Math.random() * 0.6),
+        born: SIM.time, life: 0.35 + Math.random() * 0.5,
+        conf: 0.2 + Math.random() * 0.35
+      });
+      SIM.ghosts++;
+    }
+    for (var i = ghostBlobs.length - 1; i >= 0; i--) {
+      var gb = ghostBlobs[i];
+      var age = SIM.time - gb.born;
+      if (age > gb.life) { ghostBlobs.splice(i, 1); continue; }
+      ctx.save();
+      ctx.globalAlpha = (1 - age / gb.life) * 0.75;
+      drawBracketBox(gb, 'rgba(251,191,36,0.9)', '? SPLASH ' + gb.conf.toFixed(2), null, true);
+      ctx.restore();
+    }
+
+    // reticle + crosshair readout at the athlete centroid
+    if (full && tracking) {
+      var cx = full.x + full.w / 2, cy = full.y + full.h / 2;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(94,234,212,0.45)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx - 14, cy); ctx.lineTo(cx - 5, cy);
+      ctx.moveTo(cx + 5, cy); ctx.lineTo(cx + 14, cy);
+      ctx.moveTo(cx, cy - 14); ctx.lineTo(cx, cy - 5);
+      ctx.moveTo(cx, cy + 5); ctx.lineTo(cx, cy + 14);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // panel numbers (throttled)
+    hudAccum += dt;
+    if (hudAccum > 0.08) {
+      hudAccum = 0;
+      confEl.textContent = conf.toFixed(2);
+      confEl.style.color = conf > 0.62 ? '#86efac' : (conf > 0.4 ? '#fbbf24' : '#f87171');
+      confEl.style.textShadow = '0 0 26px ' + (conf > 0.62 ? 'rgba(134,239,172,.4)' : (conf > 0.4 ? 'rgba(251,191,36,.4)' : 'rgba(248,113,113,.45)'));
+      confFill.style.width = (conf * 100).toFixed(1) + '%';
+      confFill.style.background = conf > 0.62
+        ? 'linear-gradient(90deg,#4ade80,#86efac)'
+        : (conf > 0.4 ? 'linear-gradient(90deg,#f59e0b,#fbbf24)' : 'linear-gradient(90deg,#dc2626,#f87171)');
+      turbEl.textContent = turb.toFixed(2);
+      occlEl.innerHTML = Math.round(occl * 100) + '<small>%</small>';
+      dropEl.textContent = SIM.dropouts;
+      ghostEl.textContent = SIM.ghosts;
+
+      if (!tracking || conf < 0.4) {
+        statusEl.textContent = 'Tracking lost — signal occluded';
+        statusEl.className = 'lost';
+      } else if (warn) {
+        statusEl.textContent = 'Degraded — splash interference';
+        statusEl.className = 'warn';
+      } else {
+        statusEl.textContent = 'Tracking nominal';
+        statusEl.className = '';
+      }
+    }
+  }
+
+  // ==================================================================== //
+  //  HUD B — KINEMATIC TELEMETRY                                          //
+  // ==================================================================== //
+
+  var split50El = document.getElementById('split50');
+  var spmEl = document.getElementById('spm');
+  var velEl = document.getElementById('vel');
+  var dpsEl = document.getElementById('dps');
+  var distEl = document.getElementById('dist');
+  var strokesEl = document.getElementById('strokes');
+  var splitListEl = document.getElementById('split-list');
+  var stateEl = document.getElementById('swim-state');
+  var telAccum = 0;
+  var velSmooth = BASE_SPEED;
+  var spmSmooth = 60 / STROKE_PERIOD;
+
+  function fmtTime(s) {
+    if (!isFinite(s)) return '--.--';
+    if (s < 60) return s.toFixed(2);
+    var m = Math.floor(s / 60);
+    var rest = s - m * 60;
+    return m + ':' + (rest < 10 ? '0' : '') + rest.toFixed(2);
+  }
+
+  function renderSplits() {
+    if (!SIM.splits.length) return;
+    var html = '';
+    for (var i = 0; i < SIM.splits.length; i++) {
+      var lap = SIM.splits.length - i;
+      html += '<div><span>' + (lap * 25) + 'y</span><span>' + fmtTime(SIM.splits[i]) + '</span></div>';
+    }
+    splitListEl.innerHTML = html;
+  }
+
+  function updateTelemetry(dt) {
+    telAccum += dt;
+    if (telAccum < 0.1) return;
+    telAccum = 0;
+
+    velSmooth += (SIM.speed - velSmooth) * 0.35;
+    var rate = 60 / STROKE_PERIOD * (1 + 0.02 * Math.sin(SIM.time * 0.5));
+    if (SIM.turning) rate *= 0.42;
+    spmSmooth += (rate - spmSmooth) * 0.22;
+    var dps = velSmooth * STROKE_PERIOD;
+
+    stateEl.textContent = SIM.turning ? 'Wall turn' : 'Mid-pool · lap ' + (SIM.splits.length + 1);
+    stateEl.className = SIM.turning ? 'turn' : '';
+
+    var s50, est = false;
+    if (SIM.splits.length >= 2) {
+      s50 = SIM.splits[0] + SIM.splits[1];
+    } else if (SIM.splits.length === 1) {
+      s50 = SIM.splits[0] * 2;
+      est = true;
+    } else {
+      s50 = (POOL.length / BASE_SPEED) * 2;
+      est = true;
+    }
+
+    split50El.textContent = (est ? '~' : '') + fmtTime(s50);
+    split50El.className = 'v' + (est ? ' est' : '');
+    spmEl.textContent = spmSmooth.toFixed(1);
+    velEl.textContent = velSmooth.toFixed(2);
+    dpsEl.textContent = dps.toFixed(2);
+    distEl.textContent = Math.floor(SIM.distance / YARD);
+    strokesEl.textContent = SIM.cycles * 2;
+  }
+
+  // ==================================================================== //
+  //  RESIZE / LOOP                                                        //
+  // ==================================================================== //
+
+  function resize() {
+    var w = window.innerWidth, h = window.innerHeight;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    renderer.setPixelRatio(dpr);
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+
+    cvW = w; cvH = h;
+    cvCanvas.width = Math.floor(w * dpr);
+    cvCanvas.height = Math.floor(h * dpr);
+    cvCanvas.style.width = w + 'px';
+    cvCanvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    var fovRad = camera.fov * Math.PI / 180;
+    U.uSizeScale.value = (h * dpr) / (2 * Math.tan(fovRad / 2));
+  }
+  window.addEventListener('resize', function () {
+    resize();
+    if (!userOrbited) gotoView(activeView);    // re-frame on rotate
+  });
+  resize();
+
+  var fpsEl = document.getElementById('fps');
+  var frames = 0, fpsAccum = 0;
+  var paused = false;
+
+  document.addEventListener('visibilitychange', function () {
+    paused = document.hidden;
+    if (!paused) SIM.clock.getDelta();
+  });
+
+  function loop() {
+    requestAnimationFrame(loop);
+    if (paused) return;
+
+    var dt = Math.min(SIM.clock.getDelta(), 0.05);
+
+    updateSim(dt);
+    updateCamera(dt);
+    updateCV(dt);
+    if (mode === 'human') updateTelemetry(dt);
+
+    renderer.render(scene, camera);
+
+    frames++;
+    fpsAccum += dt;
+    if (fpsAccum >= 0.5) {
+      fpsEl.textContent = Math.round(frames / fpsAccum);
+      frames = 0; fpsAccum = 0;
+    }
+  }
+
+  document.getElementById('count').innerHTML =
+    '<b>' + (water.count + swimmer.count).toLocaleString() + '</b> gpu particles';
+
+  // open wide, then settle into the coach angle
+  camera.position.set(SIM.x - 8.6, 5.4, 12.2);
+  controls.target.set(SIM.x, 0, 0);
+  gotoView('deck');
+  requestAnimationFrame(function () {
+    document.body.classList.add('ready');
+    loop();
+  });
+  setTimeout(dismissHint, 9000);
+})();
+</script>
+</body>
+</html>
